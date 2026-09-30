@@ -22,14 +22,28 @@ struct ModelProvider: Codable, Equatable, Identifiable {
         .openai: "https://api.openai.com/v1",
     ]
 
-    /// 与 Termany 相同的拼接规则：base 已含完整路径则直接用；以 /v1 结尾则补后半段；否则补 /v1/…
+    /// 端点拼接规则：
+    /// 1. 若 base 已含完整路径（以 /chat/completions 或 /messages 结尾）则直接使用
+    /// 2. 若以版本号（如 /v1, /v2, /v4 等）结尾：OpenAI 补 /chat/completions，Anthropic 补 /messages
+    /// 3. 普通 Base URL：根据格式补全 /v1/chat/completions 或 /v1/messages
     var endpoint: URL? {
         let base = (apiBase.trimmingCharacters(in: .whitespaces).isEmpty ? Self.defaultBase[kind]! : apiBase)
             .trimmingCharacters(in: .whitespaces)
             .replacingOccurrences(of: "/+$", with: "", options: .regularExpression)
+
+        // 1. 已是完整路径
+        if base.hasSuffix("/chat/completions") || base.hasSuffix("/messages") {
+            return URL(string: base)
+        }
+
+        // 2. 以 API 版本号结尾（例如 /v1, /v2, /v4 等）
+        if base.range(of: #"/v\d+$"#, options: .regularExpression) != nil {
+            let path = kind == .anthropic ? "/messages" : "/chat/completions"
+            return URL(string: base + path)
+        }
+
+        // 3. 基础域名或路径：补全版本与端点
         let path = kind == .anthropic ? "/v1/messages" : "/v1/chat/completions"
-        if base.hasSuffix(path) { return URL(string: base) }
-        if base.hasSuffix("/v1") { return URL(string: base + path.dropFirst(3)) }
         return URL(string: base + path)
     }
 
